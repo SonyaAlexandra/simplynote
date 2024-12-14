@@ -3,12 +3,16 @@ package com.example.finishapplication1;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 import androidx.appcompat.widget.Toolbar;
 
 import android.annotation.SuppressLint;
+import android.Manifest;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
+import android.graphics.drawable.BitmapDrawable;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.view.MenuItem;
@@ -17,11 +21,8 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
-import android.widget.Switch;
 import android.widget.Toast;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
@@ -37,6 +38,7 @@ public class createnote extends AppCompatActivity {
     private FloatingActionButton mSaveNote;
     private ProgressBar mProgressBarOfCreateNote;
     private ImageView mImageView;
+    private SwitchCompat themeSwitch;
 
     private FirebaseAuth firebaseAuth;
     private FirebaseUser firebaseUser;
@@ -45,6 +47,8 @@ public class createnote extends AppCompatActivity {
     private static final String PREFS_NAME = "theme_prefs";
     private static final String IS_DARK_MODE = "is_dark_mode";
     private static final int REQUEST_CODE = 99;
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
+    
 
     @SuppressLint("MissingInflatedId")
     @Override
@@ -61,17 +65,19 @@ public class createnote extends AppCompatActivity {
         mSaveNote = findViewById(R.id.saveNote);
         mProgressBarOfCreateNote = findViewById(R.id.progressBarOfCreateNote);
         mImageView = findViewById(R.id.imageView); // Add an ImageView for displaying the captured image
+        themeSwitch = findViewById(R.id.theme_switch);
 
         Toolbar toolbar = findViewById(R.id.toolbarofcreatenote);
         setSupportActionBar(toolbar);
-        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        if (getSupportActionBar() != null) {
+            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        }
 
         firebaseAuth = FirebaseAuth.getInstance();
         firebaseFirestore = FirebaseFirestore.getInstance();
         firebaseUser = firebaseAuth.getCurrentUser();
 
         // Theme toggle switch
-        Switch themeSwitch = findViewById(R.id.theme_switch);
         themeSwitch.setChecked(isDarkMode()); // Set initial state
         themeSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
             setDarkMode(isChecked); // Save preference
@@ -79,51 +85,79 @@ public class createnote extends AppCompatActivity {
         });
 
         // Save note functionality
-        mSaveNote.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                String title = mCreateTitleOfNote.getText().toString();
-                String content = mCreateContentOfNote.getText().toString();
+        mSaveNote.setOnClickListener(view -> {
+            String title = mCreateTitleOfNote.getText().toString();
+            String content = mCreateContentOfNote.getText().toString();
 
-                if (title.isEmpty() || content.isEmpty()) {
-                    Toast.makeText(getApplicationContext(), "Both fields are required", Toast.LENGTH_SHORT).show();
-                } else {
-                    mProgressBarOfCreateNote.setVisibility(View.VISIBLE);
+            if (title.isEmpty() || content.isEmpty()) {
+                Toast.makeText(getApplicationContext(), "Both fields are required", Toast.LENGTH_SHORT).show();
+            } else {
+                mProgressBarOfCreateNote.setVisibility(View.VISIBLE);
 
-                    DocumentReference documentReference = firebaseFirestore.collection("notes")
-                            .document(firebaseUser.getUid()).collection("myNotes").document();
-                    Map<String, Object> note = new HashMap<>();
-                    note.put("title", title);
-                    note.put("content", content);
+                DocumentReference documentReference = firebaseFirestore.collection("notes")
+                        .document(firebaseUser.getUid()).collection("myNotes").document();
+                Map<String, Object> note = new HashMap<>();
+                note.put("title", title);
+                note.put("content", content);
 
-                    documentReference.set(note).addOnSuccessListener(new OnSuccessListener<Void>() {
-                        @Override
-                        public void onSuccess(Void unused) {
-                            Toast.makeText(getApplicationContext(), "Note Created Successfully", Toast.LENGTH_SHORT).show();
-                            startActivity(new Intent(createnote.this, notesActivity.class));
-                        }
-                    }).addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            Toast.makeText(getApplicationContext(), "Failed To Create Note", Toast.LENGTH_SHORT).show();
-                            mProgressBarOfCreateNote.setVisibility(View.INVISIBLE);
-                        }
-                    });
-                }
+                documentReference.set(note).addOnSuccessListener(unused -> {
+                    Toast.makeText(getApplicationContext(), "Note Created Successfully", Toast.LENGTH_SHORT).show();
+                    startActivity(new Intent(createnote.this, notesActivity.class));
+                }).addOnFailureListener(e -> {
+                    Toast.makeText(getApplicationContext(), "Failed To Create Note", Toast.LENGTH_SHORT).show();
+                    mProgressBarOfCreateNote.setVisibility(View.INVISIBLE);
+                });
             }
         });
 
         // Camera functionality
-     Button fabCamera = findViewById(R.id.btncamera);
-        fabCamera.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                startActivityForResult(cameraIntent, REQUEST_CODE);
+        Button fabCamera = findViewById(R.id.btncamera);
+        fabCamera.setOnClickListener(view -> {
+            // Check for camera permission
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+            } else {
+                // Permission already granted, open camera
+                openCamera();
             }
         });
+        // Restore image state after theme change (if available)
+        if (savedInstanceState != null) {
+            Bitmap imageBitmap = savedInstanceState.getParcelable("captured_image");
+            if (imageBitmap != null) {
+                mImageView.setImageBitmap(imageBitmap);
+            }
+        }
     }
-
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        // Save the captured image before theme change
+        if (mImageView.getDrawable() != null) {
+            BitmapDrawable drawable = (BitmapDrawable) mImageView.getDrawable();
+            Bitmap bitmap = drawable.getBitmap();
+            outState.putParcelable("captured_image", bitmap);
+        }
+    }
+    // Handle camera permission request result
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission granted, open camera
+                openCamera();
+            } else {
+                // Permission denied, show a message
+                Toast.makeText(this, "Camera permission denied", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+    // Open the camera
+    private void openCamera() {
+        Intent cameraIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
+        startActivityForResult(cameraIntent, REQUEST_CODE);
+    }
     // Handle result from camera activity
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
@@ -139,9 +173,9 @@ public class createnote extends AppCompatActivity {
     // Theme-related methods
     private void applyTheme() {
         if (isDarkMode()) {
-            setTheme(R.style.AppTheme_Dark);
+            setTheme(R.style.AppTheme);
         } else {
-            setTheme(R.style.AppTheme_Light);
+            setTheme(R.style.AppTheme_Dark);
         }
     }
 

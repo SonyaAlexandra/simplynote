@@ -11,8 +11,7 @@
     <androidx.appcompat.widget.Toolbar
         android:layout_width="match_parent"
         android:layout_height="?attr/actionBarSize"
-        android:id="@+id/toolbarofcreatenote"
-        android:background="@color/white">
+        android:id="@+id/toolbarofcreatenote">
 
         <EditText
             android:layout_width="match_parent"
@@ -20,7 +19,6 @@
             android:paddingTop="12dp"
             android:textSize="20sp"
             android:textStyle="bold"
-            android:textColor="@color/black"
             android:hint="Enter your note title here"
             android:id="@+id/createTitleNote">
         </EditText>
